@@ -1,80 +1,95 @@
-import sqlite3 from 'sqlite3';
-import path from 'path';
+import mongoose from 'mongoose';
 
-const dbPath = path.join(__dirname, '../../data/octofit.db');
+// MongoDB connection URI - uses Codespaces-aware connection or local
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/octofit_db';
 
-export const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Database connection error:', err);
-  } else {
-    console.log('Connected to SQLite database');
-    initializeDatabase();
+// Connect to MongoDB
+export const connectDB = async () => {
+  try {
+    await mongoose.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('Connected to MongoDB');
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
   }
-});
-
-const initializeDatabase = () => {
-  // Users table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Teams table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS teams (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      description TEXT,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Activities table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS activities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId INTEGER NOT NULL,
-      type TEXT NOT NULL,
-      duration INTEGER,
-      calories INTEGER,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users(id)
-    )
-  `);
-
-  // Workouts table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS workouts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId INTEGER NOT NULL,
-      teamId INTEGER,
-      name TEXT NOT NULL,
-      duration INTEGER,
-      intensity TEXT,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users(id),
-      FOREIGN KEY (teamId) REFERENCES teams(id)
-    )
-  `);
-
-  // Leaderboard view
-  db.run(`
-    CREATE VIEW IF NOT EXISTS leaderboard AS
-    SELECT 
-      u.id,
-      u.username,
-      COUNT(a.id) as totalActivities,
-      SUM(COALESCE(a.calories, 0)) as totalCalories,
-      SUM(COALESCE(a.duration, 0)) as totalDuration
-    FROM users u
-    LEFT JOIN activities a ON u.id = a.userId
-    GROUP BY u.id, u.username
-    ORDER BY totalCalories DESC
-  `);
 };
 
-export default db;
+// User Schema
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+// Team Schema
+const teamSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
+// Activity Schema
+const activitySchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, required: true },
+  duration: Number,
+  calories: Number,
+  createdAt: { type: Date, default: Date.now },
+});
+
+// Workout Schema
+const workoutSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+  name: { type: String, required: true },
+  duration: Number,
+  intensity: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
+// Models
+export const User = mongoose.model('User', userSchema);
+export const Team = mongoose.model('Team', teamSchema);
+export const Activity = mongoose.model('Activity', activitySchema);
+export const Workout = mongoose.model('Workout', workoutSchema);
+
+// Leaderboard aggregation pipeline
+export const getLeaderboard = async () => {
+  return await Activity.aggregate([
+    {
+      $group: {
+        _id: '$userId',
+        totalActivities: { $sum: 1 },
+        totalCalories: { $sum: '$calories' || 0 },
+        totalDuration: { $sum: '$duration' || 0 },
+      },
+    },
+    {
+      $sort: { totalCalories: -1 },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'userInfo',
+      },
+    },
+    {
+      $unwind: '$userInfo',
+    },
+    {
+      $project: {
+        username: '$userInfo.username',
+        totalActivities: 1,
+        totalCalories: 1,
+        totalDuration: 1,
+      },
+    },
+  ]);
+};
+
+export default mongoose;
