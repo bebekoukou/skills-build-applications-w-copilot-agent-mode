@@ -1,4 +1,5 @@
 import express, { Express, Request, Response } from 'express';
+import { connectDB } from './db';
 import { usersRouter } from './routes/users';
 import { teamsRouter } from './routes/teams';
 import { activitiesRouter } from './routes/activities';
@@ -11,6 +12,9 @@ const PORT = 8000;
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Initialize database
+connectDB();
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -41,6 +45,7 @@ app.use('/api/workouts', workoutsRouter);
 app.listen(PORT, () => {
   console.log(`🚀 Octofit Tracker API running on port ${PORT}`);
   console.log(`📍 Server: http://localhost:${PORT}`);
+  console.log(`📊 MongoDB: octofit_db (port 27017)`);
   if (process.env.CODESPACE_NAME) {
     console.log(`🌐 Codespace: https://${process.env.CODESPACE_NAME}-8000.app.github.dev`);
   }
