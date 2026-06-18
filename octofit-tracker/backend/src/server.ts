@@ -1,31 +1,47 @@
-import express from 'express'
-import mongoose from 'mongoose'
-import cors from 'cors'
-import dotenv from 'dotenv'
+import express, { Express, Request, Response } from 'express';
+import { usersRouter } from './routes/users';
+import { teamsRouter } from './routes/teams';
+import { activitiesRouter } from './routes/activities';
+import { leaderboardRouter } from './routes/leaderboard';
+import { workoutsRouter } from './routes/workouts';
 
-import config from './config'
-import healthRouter from './routes/health'
+const app: Express = express();
+const PORT = 8000;
 
-dotenv.config()
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-const app = express()
-app.use(cors())
-app.use(express.json())
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
-app.use('/health', healthRouter)
+// API URL helper endpoint for Codespaces
+app.get('/api/config', (req: Request, res: Response) => {
+  const codespaceName = process.env.CODESPACE_NAME;
+  const apiUrl = codespaceName
+    ? `https://${codespaceName}-8000.app.github.dev`
+    : 'http://localhost:8000';
+  
+  res.json({
+    apiUrl,
+    environment: codespaceName ? 'codespace' : 'local'
+  });
+});
 
-async function start() {
-  try {
-    await mongoose.connect(config.mongoUri)
-    console.log('Connected to MongoDB')
-  } catch (err) {
-    console.error('MongoDB connection error:', err)
+// Route handlers
+app.use('/api/users', usersRouter);
+app.use('/api/teams', teamsRouter);
+app.use('/api/activities', activitiesRouter);
+app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/workouts', workoutsRouter);
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Octofit Tracker API running on port ${PORT}`);
+  console.log(`📍 Server: http://localhost:${PORT}`);
+  if (process.env.CODESPACE_NAME) {
+    console.log(`🌐 Codespace: https://${process.env.CODESPACE_NAME}-8000.app.github.dev`);
   }
-
-  const port = config.port
-  app.listen(port, () => {
-    console.log(`Server listening on http://localhost:${port}`)
-  })
-}
-
-start()
+});
